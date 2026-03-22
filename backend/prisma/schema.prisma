@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(uuid())
+  username          String    @unique
+  email             String    @unique
+  passwordHash      String
+  avatarEmoji       String    @default("😊")
+  avatarColor       String    @default("#6366F1")
+  focusGems         Int       @default(100)
+  totalFocusMinutes Int       @default(0)
+  currentStreakDays Int       @default(0)
+  longestStreakDays Int       @default(0)
+  distractionCount  Int       @default(0)
+  isPremium         Boolean   @default(false)
+  premiumPlan       String?
+  premiumExpiresAt  DateTime?
+  notificationToken String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  memberships       TroupeMembership[]
+  sessions          SessionParticipant[]
+  createdTroupes    Troupe[]          @relation("TroupeCreator")
+  createdSessions   FocusSession[]    @relation("SessionCreator")
+  payments          Payment[]
+  distractionEvents DistractionEvent[]
+  userAchievements  UserAchievement[]
+}
+
+model Troupe {
+  id                String    @id @default(uuid())
+  name              String
+  description       String?
+  crestEmoji        String    @default("🎯")
+  crestColor        String    @default("#6366F1")
+  createdById       String
+  isPrivate         Boolean   @default(true)
+  inviteCode        String    @unique
+  level             Int       @default(1)
+  totalFocusMinutes Int       @default(0)
+  xp                Int       @default(0)
+  createdAt         DateTime  @default(now())
+  
+  createdBy         User                @relation("TroupeCreator", fields: [createdById], references: [id])
+  members           TroupeMembership[]
+  sessions          FocusSession[]
+}
+
+model TroupeMembership {
+  id          String   @id @default(uuid())
+  userId      String
+  troupeId    String
+  role        String   @default("member")
+  joinedAt    DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+  troupe      Troupe   @relation(fields: [troupeId], references: [id])
+  
+  @@unique([userId, troupeId])
+}
+
+model FocusSession {
+  id                    String    @id @default(uuid())
+  troupeId              String
+  createdById           String
+  title                 String?
+  scheduledFor          DateTime?
+  durationMinutes       Int       @default(25)
+  breakDurationMinutes  Int       @default(5)
+  totalPotSize          Int       @default(0)
+  status                String    @default("scheduled")
+  startedAt             DateTime?
+  endedAt               DateTime?
+  createdAt             DateTime  @default(now())
+  
+  troupe                Troupe                @relation(fields: [troupeId], references: [id])
+  createdBy             User                  @relation("SessionCreator", fields: [createdById], references: [id])
+  participants          SessionParticipant[]
+  distractionEvents     DistractionEvent[]
+}
+
+model SessionParticipant {
+  id                   String    @id @default(uuid())
+  sessionId            String
+  userId               String
+  contributionGems     Int       @default(10)
+  focusStatus          String    @default("focusing")
+  distractionCount     Int       @default(0)
+  focusMinutesAchieved Int       @default(0)
+  gemsEarned           Int       @default(0)
+  joinedAt             DateTime  @default(now())
+  
+  session              FocusSession          @relation(fields: [sessionId], references: [id])
+  user                 User                  @relation(fields: [userId], references: [id])
+  
+  @@unique([sessionId, userId])
+}
+
+model DistractionEvent {
+  id              String    @id @default(uuid())
+  sessionId       String
+  userId          String
+  distractionType String
+  detectedAt      DateTime  @default(now())
+  
+  session         FocusSession  @relation(fields: [sessionId], references: [id])
+  user            User          @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id              String    @id @default(uuid())
+  userId          String
+  nowpaymentsId   String    @unique
+  productType     String
+  amountUsd       Float
+  status          String    @default("pending")
+  cryptoCurrency  String?
+  cryptoAmount    Float?
+  checkoutUrl     String?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  
+  user            User      @relation(fields: [userId], references: [id])
+}
+
+model Achievement {
+  id            String    @id @default(uuid())
+  name          String
+  description   String
+  icon          String
+  criteriaType  String
+  criteriaValue Int
+  rewardGems    Int
+}
+
+model UserAchievement {
+  id            String    @id @default(uuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime  @default(now())
+  
+  user          User          @relation(fields: [userId], references: [id])
+  achievement   Achievement   @relation(fields: [achievementId], references: [id])
+  
+  @@unique([userId, achievementId])
+}
