@@ -139,7 +139,7 @@ model Achievement {
   criteriaType  String
   criteriaValue Int
   rewardGems    Int
-  userAchievements UserAchievement[]  // ← THIS WAS MISSING
+  userAchievements UserAchievement[]
 }
 
 model UserAchievement {
