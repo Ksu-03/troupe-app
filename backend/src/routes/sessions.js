@@ -4,12 +4,10 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Create a focus session
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { troupeId, title, scheduledFor, durationMinutes, breakDurationMinutes, contributionGems } = req.body;
+    const { troupeId, title, scheduledFor, durationMinutes, breakDurationMinutes } = req.body;
     
-    // Check if user is in troupe
     const membership = await prisma.troupeMembership.findUnique({
       where: {
         userId_troupeId: {
@@ -23,7 +21,6 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this troupe' });
     }
     
-    // Create session
     const session = await prisma.focusSession.create({
       data: {
         troupeId,
@@ -43,7 +40,6 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// Get active sessions for user
 router.get('/active', authenticate, async (req, res) => {
   try {
     const activeSessions = await prisma.focusSession.findMany({
@@ -69,7 +65,6 @@ router.get('/active', authenticate, async (req, res) => {
   }
 });
 
-// Get session by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const session = await prisma.focusSession.findUnique({
@@ -97,7 +92,6 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// Join session
 router.post('/:id/join', authenticate, async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -113,16 +107,14 @@ router.post('/:id/join', authenticate, async (req, res) => {
     }
     
     if (session.status !== 'scheduled' && session.status !== 'active') {
-      return res.status(400).json({ error: 'Session not available for joining' });
+      return res.status(400).json({ error: 'Session not available' });
     }
     
-    // Check if already joined
     const existingParticipant = session.participants.find(p => p.userId === req.userId);
     if (existingParticipant) {
-      return res.status(400).json({ error: 'Already joined this session' });
+      return res.status(400).json({ error: 'Already joined' });
     }
     
-    // Check gem balance
     const user = await prisma.user.findUnique({
       where: { id: req.userId }
     });
@@ -132,13 +124,11 @@ router.post('/:id/join', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Not enough gems' });
     }
     
-    // Deduct gems
     await prisma.user.update({
       where: { id: req.userId },
       data: { focusGems: { decrement: contribution } }
     });
     
-    // Add participant
     const participant = await prisma.sessionParticipant.create({
       data: {
         sessionId,
@@ -147,7 +137,6 @@ router.post('/:id/join', authenticate, async (req, res) => {
       }
     });
     
-    // Update pot size
     await prisma.focusSession.update({
       where: { id: sessionId },
       data: { totalPotSize: { increment: contribution } }
@@ -161,7 +150,6 @@ router.post('/:id/join', authenticate, async (req, res) => {
   }
 });
 
-// Start session (creator only)
 router.post('/:id/start', authenticate, async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -175,11 +163,11 @@ router.post('/:id/start', authenticate, async (req, res) => {
     }
     
     if (session.createdById !== req.userId) {
-      return res.status(403).json({ error: 'Only session creator can start' });
+      return res.status(403).json({ error: 'Only creator can start' });
     }
     
     if (session.status !== 'scheduled') {
-      return res.status(400).json({ error: 'Session already started or ended' });
+      return res.status(400).json({ error: 'Session already started' });
     }
     
     const updatedSession = await prisma.focusSession.update({
@@ -190,7 +178,6 @@ router.post('/:id/start', authenticate, async (req, res) => {
       }
     });
     
-    // Notify via socket (if needed)
     const io = req.app.get('io');
     io.to(`session:${sessionId}`).emit('session-started', { sessionId });
     
@@ -202,7 +189,6 @@ router.post('/:id/start', authenticate, async (req, res) => {
   }
 });
 
-// End session
 router.post('/:id/end', authenticate, async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -217,21 +203,17 @@ router.post('/:id/end', authenticate, async (req, res) => {
     }
     
     if (session.createdById !== req.userId) {
-      return res.status(403).json({ error: 'Only session creator can end' });
+      return res.status(403).json({ error: 'Only creator can end' });
     }
     
     if (session.status !== 'active') {
       return res.status(400).json({ error: 'Session not active' });
     }
     
-    // Calculate earnings
     const focusedParticipants = session.participants.filter(p => p.focusStatus === 'focusing');
-    const distractedParticipants = session.participants.filter(p => p.focusStatus === 'distracted');
-    
     const totalPot = session.totalPotSize;
     const rewardPerFocused = focusedParticipants.length > 0 ? totalPot / focusedParticipants.length : 0;
     
-    // Distribute gems
     for (const participant of focusedParticipants) {
       const gemsEarned = Math.floor(rewardPerFocused);
       await prisma.user.update({
@@ -245,7 +227,6 @@ router.post('/:id/end', authenticate, async (req, res) => {
       });
     }
     
-    // Update session
     const updatedSession = await prisma.focusSession.update({
       where: { id: sessionId },
       data: {
@@ -254,24 +235,23 @@ router.post('/:id/end', authenticate, async (req, res) => {
       }
     });
     
-    // Notify via socket
     const io = req.app.get('io');
-    io.to(`session:${sessionId}`).emit('session-ended', { 
+    io.to(`session:${sessionId}`).emit('session-ended', {
       sessionId,
       results: {
         totalPot,
         focusedCount: focusedParticipants.length,
-        distractedCount: distractedParticipants.length,
+        distractedCount: session.participants.length - focusedParticipants.length,
         rewardPerFocused
       }
     });
     
-    res.json({ 
+    res.json({
       session: updatedSession,
       results: {
         totalPot,
         focusedCount: focusedParticipants.length,
-        distractedCount: distractedParticipants.length,
+        distractedCount: session.participants.length - focusedParticipants.length,
         rewardPerFocused
       }
     });
@@ -282,7 +262,6 @@ router.post('/:id/end', authenticate, async (req, res) => {
   }
 });
 
-// Report distraction
 router.post('/:id/report-distraction', authenticate, async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -302,10 +281,9 @@ router.post('/:id/report-distraction', authenticate, async (req, res) => {
     }
     
     if (participant.focusStatus !== 'focusing') {
-      return res.status(400).json({ error: 'Already distracted or completed' });
+      return res.status(400).json({ error: 'Already distracted' });
     }
     
-    // Update participant
     const updatedParticipant = await prisma.sessionParticipant.update({
       where: { id: participant.id },
       data: {
@@ -314,7 +292,6 @@ router.post('/:id/report-distraction', authenticate, async (req, res) => {
       }
     });
     
-    // Create distraction event
     await prisma.distractionEvent.create({
       data: {
         sessionId,
@@ -323,7 +300,6 @@ router.post('/:id/report-distraction', authenticate, async (req, res) => {
       }
     });
     
-    // Notify via socket
     const io = req.app.get('io');
     io.to(`session:${sessionId}`).emit('participant-distracted', {
       userId: req.userId,
@@ -338,7 +314,6 @@ router.post('/:id/report-distraction', authenticate, async (req, res) => {
   }
 });
 
-// Send heartbeat (focus verification)
 router.post('/:id/heartbeat', authenticate, async (req, res) => {
   try {
     const sessionId = req.params.id;
@@ -357,8 +332,6 @@ router.post('/:id/heartbeat', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Not a participant' });
     }
     
-    // Check for distraction (simple motion detection)
-    // In production, you'd have more sophisticated logic
     let isDistracted = false;
     let distractionReason = null;
     
@@ -396,7 +369,7 @@ router.post('/:id/heartbeat', authenticate, async (req, res) => {
       });
     }
     
-    res.json({ 
+    res.json({
       status: participant.focusStatus,
       distractionCount: participant.distractionCount
     });
