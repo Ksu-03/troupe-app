@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+app.use(cors());  // This allows all origins
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
