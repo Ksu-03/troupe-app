@@ -11,13 +11,17 @@ router.post('/register', async (req, res) => {
   try {
     const { username, email, password, avatarEmoji, avatarColor } = req.body;
     
-    // Check if user exists
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields required' });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
     const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [
-          { email },
-          { username }
-        ]
+        OR: [{ email }, { username }]
       }
     });
     
@@ -25,10 +29,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Username or email already taken' });
     }
     
-    // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
     
-    // Create user
     const user = await prisma.user.create({
       data: {
         username,
@@ -39,16 +41,11 @@ router.post('/register', async (req, res) => {
       }
     });
     
-    // Generate token
     const token = generateToken(user.id);
     
-    // Return user without password
     const { passwordHash: _, ...userWithoutPassword } = user;
     
-    res.status(201).json({
-      user: userWithoutPassword,
-      token
-    });
+    res.status(201).json({ user: userWithoutPassword, token });
     
   } catch (error) {
     console.error('Register error:', error);
@@ -61,7 +58,6 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find user
     const user = await prisma.user.findUnique({
       where: { email }
     });
@@ -70,22 +66,16 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // Verify password
     const validPassword = await bcrypt.compare(password, user.passwordHash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // Generate token
     const token = generateToken(user.id);
     
-    // Return user without password
     const { passwordHash: _, ...userWithoutPassword } = user;
     
-    res.json({
-      user: userWithoutPassword,
-      token
-    });
+    res.json({ user: userWithoutPassword, token });
     
   } catch (error) {
     console.error('Login error:', error);
@@ -97,11 +87,6 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   const { passwordHash: _, ...user } = req.user;
   res.json({ user });
-});
-
-// Logout (client-side only, just return success)
-router.post('/logout', authenticate, (req, res) => {
-  res.json({ success: true });
 });
 
 module.exports = router;
