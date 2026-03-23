@@ -1,10 +1,22 @@
 #!/bin/bash
 set -e
-echo "Starting Troupe Backend..."
+echo "========================================="
+echo "Troupe Backend - Starting..."
+echo "========================================="
+
 cd backend
-echo "Installing dependencies..."
+
+echo "📦 Installing dependencies..."
 npm install
-echo "Generating Prisma client..."
+
+echo "🗄️  Running database migrations..."
+npx prisma migrate deploy
+
+echo "🌱 Seeding database..."
+npx prisma db seed
+
+echo "⚙️  Generating Prisma client..."
 npx prisma generate
-echo "Starting server..."
+
+echo "🚀 Starting server..."
 npm start
