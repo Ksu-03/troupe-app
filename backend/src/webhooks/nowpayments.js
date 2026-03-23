@@ -4,44 +4,34 @@ const prisma = require('../lib/prisma');
 
 const router = express.Router();
 
-// Verify webhook signature
 function verifySignature(payload, signature) {
   const hmac = crypto.createHmac('sha512', process.env.NOWPAYMENTS_IPN_SECRET);
   const calculated = hmac.update(payload).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(signature));
 }
 
-// NOWPayments webhook
 router.post('/nowpayments', async (req, res) => {
   try {
     const signature = req.headers['x-nowpayments-sig'];
     const payload = JSON.stringify(req.body);
     
-    // Verify signature
     if (!verifySignature(payload, signature)) {
       console.error('Invalid webhook signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
     
     const event = req.body;
-    console.log('NOWPayments webhook received:', event.payment_id, event.payment_status);
+    console.log('NOWPayments webhook:', event.payment_id, event.payment_status);
     
     if (event.payment_status === 'finished') {
       const payment = await prisma.payment.findUnique({
         where: { nowpaymentsId: event.payment_id }
       });
       
-      if (!payment) {
-        console.error('Payment not found:', event.payment_id);
+      if (!payment || payment.status === 'completed') {
         return res.sendStatus(200);
       }
       
-      if (payment.status === 'completed') {
-        console.log('Payment already processed:', event.payment_id);
-        return res.sendStatus(200);
-      }
-      
-      // Activate based on product type
       if (payment.productType.startsWith('premium')) {
         const plan = payment.productType === 'premium_monthly' ? 'monthly' : 'yearly';
         const expiresAt = plan === 'monthly'
@@ -74,7 +64,6 @@ router.post('/nowpayments', async (req, res) => {
         });
       }
       
-      // Update payment status
       await prisma.payment.update({
         where: { id: payment.id },
         data: {
@@ -85,7 +74,7 @@ router.post('/nowpayments', async (req, res) => {
         }
       });
       
-      console.log(`Payment completed: ${event.payment_id} for user ${payment.userId}`);
+      console.log(`Payment completed: ${event.payment_id}`);
     }
     
     res.sendStatus(200);
