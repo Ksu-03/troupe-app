@@ -1,11 +1,8 @@
 {
   "name": "troupe-app",
   "version": "1.0.0",
-  "description": "Troupe - Social Focus Accountability App",
   "scripts": {
-    "start": "cd backend && npm start",
-    "build": "cd backend && npm install",
-    "postinstall": "cd backend && npm install"
+    "start": "bash start.sh"
   },
   "engines": {
     "node": "18.x"
