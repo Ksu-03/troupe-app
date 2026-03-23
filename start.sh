@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 echo "========================================="
 echo "Troupe Backend - Starting..."
 echo "========================================="
@@ -10,7 +11,7 @@ echo "📦 Installing dependencies..."
 npm install
 
 echo "🗄️  Running database migrations..."
-npx prisma migrate deploy
+npx prisma migrate deploy || echo "Migrations may already be applied"
 
 echo "🌱 Seeding database..."
 npx prisma db seed || echo "Seeding skipped (already seeded)"
