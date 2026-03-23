@@ -1,16 +1,14 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
-const { authenticate, requirePremium } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get profile
 router.get('/profile', authenticate, async (req, res) => {
   const { passwordHash: _, ...user } = req.user;
   res.json({ user });
 });
 
-// Update profile
 router.put('/profile', authenticate, async (req, res) => {
   try {
     const { username, avatarEmoji, avatarColor, notificationToken } = req.body;
@@ -34,7 +32,6 @@ router.put('/profile', authenticate, async (req, res) => {
   }
 });
 
-// Get user stats
 router.get('/stats', authenticate, async (req, res) => {
   try {
     const sessions = await prisma.sessionParticipant.findMany({
@@ -71,7 +68,6 @@ router.get('/stats', authenticate, async (req, res) => {
   }
 });
 
-// Get achievements
 router.get('/achievements', authenticate, async (req, res) => {
   try {
     const allAchievements = await prisma.achievement.findMany();
