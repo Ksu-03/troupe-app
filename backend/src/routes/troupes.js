@@ -5,12 +5,10 @@ const crypto = require('crypto');
 
 const router = express.Router();
 
-// Generate random invite code
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
-// Create troupe
 router.post('/', authenticate, async (req, res) => {
   try {
     const { name, description, crestEmoji, crestColor, isPrivate } = req.body;
@@ -29,7 +27,6 @@ router.post('/', authenticate, async (req, res) => {
       }
     });
     
-    // Add creator as admin member
     await prisma.troupeMembership.create({
       data: {
         userId: req.userId,
@@ -46,7 +43,6 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// Get all user's troupes
 router.get('/', authenticate, async (req, res) => {
   try {
     const memberships = await prisma.troupeMembership.findMany({
@@ -63,7 +59,6 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// Get troupe by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const troupe = await prisma.troupe.findUnique({
@@ -79,13 +74,11 @@ router.get('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Troupe not found' });
     }
     
-    // Check if user is a member
     const isMember = troupe.members.some(m => m.userId === req.userId);
     if (!isMember) {
-      return res.status(403).json({ error: 'Not a member of this troupe' });
+      return res.status(403).json({ error: 'Not a member' });
     }
     
-    // Get recent sessions
     const recentSessions = await prisma.focusSession.findMany({
       where: { troupeId: troupe.id },
       orderBy: { createdAt: 'desc' },
@@ -103,7 +96,6 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// Join troupe with invite code
 router.post('/join', authenticate, async (req, res) => {
   try {
     const { inviteCode } = req.body;
@@ -116,7 +108,6 @@ router.post('/join', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Invalid invite code' });
     }
     
-    // Check if already a member
     const existingMembership = await prisma.troupeMembership.findUnique({
       where: {
         userId_troupeId: {
@@ -146,12 +137,10 @@ router.post('/join', authenticate, async (req, res) => {
   }
 });
 
-// Leave troupe
 router.post('/:id/leave', authenticate, async (req, res) => {
   try {
     const troupeId = req.params.id;
     
-    // Check if user is member
     const membership = await prisma.troupeMembership.findUnique({
       where: {
         userId_troupeId: {
@@ -165,7 +154,6 @@ router.post('/:id/leave', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Not a member' });
     }
     
-    // Don't allow last admin to leave
     const admins = await prisma.troupeMembership.findMany({
       where: {
         troupeId: troupeId,
@@ -189,7 +177,6 @@ router.post('/:id/leave', authenticate, async (req, res) => {
   }
 });
 
-// Get troupe members
 router.get('/:id/members', authenticate, async (req, res) => {
   try {
     const members = await prisma.troupeMembership.findMany({
@@ -223,12 +210,10 @@ router.get('/:id/members', authenticate, async (req, res) => {
   }
 });
 
-// Regenerate invite code (admin only)
 router.post('/:id/invite-code', authenticate, async (req, res) => {
   try {
     const troupeId = req.params.id;
     
-    // Check if user is admin
     const membership = await prisma.troupeMembership.findUnique({
       where: {
         userId_troupeId: {
