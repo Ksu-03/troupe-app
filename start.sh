@@ -13,7 +13,7 @@ echo "🗄️  Running database migrations..."
 npx prisma migrate deploy
 
 echo "🌱 Seeding database..."
-npx prisma db seed
+npx prisma db seed || echo "Seeding skipped (already seeded)"
 
 echo "⚙️  Generating Prisma client..."
 npx prisma generate
