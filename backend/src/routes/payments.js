@@ -5,17 +5,15 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Product catalog
 const PRODUCTS = {
   premium_monthly: { price: 3.99, type: 'subscription', description: 'Troupe Premium - Monthly' },
   premium_yearly: { price: 29.99, type: 'subscription', description: 'Troupe Premium - Yearly' },
   gems_100: { price: 0.99, type: 'gems', gems: 100, description: '100 Focus Gems' },
-  gems_500: { price: 3.99, type: 'gems', gems: 550, description: '550 Focus Gems (500 + 50 bonus)' },
-  gems_1200: { price: 7.99, type: 'gems', gems: 1400, description: '1400 Focus Gems (1200 + 200 bonus)' },
-  gems_3000: { price: 14.99, type: 'gems', gems: 3750, description: '3750 Focus Gems (3000 + 750 bonus)' }
+  gems_500: { price: 3.99, type: 'gems', gems: 550, description: '550 Focus Gems' },
+  gems_1200: { price: 7.99, type: 'gems', gems: 1400, description: '1400 Focus Gems' },
+  gems_3000: { price: 14.99, type: 'gems', gems: 3750, description: '3750 Focus Gems' }
 };
 
-// Get product catalog
 router.get('/products', async (req, res) => {
   const catalog = Object.entries(PRODUCTS).map(([id, data]) => ({
     id,
@@ -29,7 +27,6 @@ router.get('/products', async (req, res) => {
   res.json({ products: catalog });
 });
 
-// Create payment
 router.post('/create', authenticate, async (req, res) => {
   try {
     const { productId } = req.body;
@@ -41,7 +38,6 @@ router.post('/create', authenticate, async (req, res) => {
     
     const orderId = `${req.userId}_${productId}_${Date.now()}`;
     
-    // Create payment in NOWPayments
     const response = await axios.post('https://api.nowpayments.io/v1/payment', {
       price_amount: product.price,
       price_currency: 'usd',
@@ -57,7 +53,6 @@ router.post('/create', authenticate, async (req, res) => {
       }
     });
     
-    // Save payment to database
     const payment = await prisma.payment.create({
       data: {
         userId: req.userId,
@@ -81,7 +76,6 @@ router.post('/create', authenticate, async (req, res) => {
   }
 });
 
-// Check payment status
 router.get('/status/:paymentId', authenticate, async (req, res) => {
   try {
     const payment = await prisma.payment.findUnique({
