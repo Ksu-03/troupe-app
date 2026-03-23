@@ -132,13 +132,14 @@ model Payment {
 }
 
 model Achievement {
-  id            String    @id @default(uuid())
+  id            String    @id
   name          String
   description   String
   icon          String
   criteriaType  String
   criteriaValue Int
   rewardGems    Int
+  userAchievements UserAchievement[]  // ← THIS WAS MISSING
 }
 
 model UserAchievement {
