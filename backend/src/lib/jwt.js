@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-this';
 
 function generateToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
