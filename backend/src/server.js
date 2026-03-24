@@ -276,6 +276,8 @@ app.post('/api/sessions/:id/heartbeat', (req, res) => {
 
 // ============ PAYMENT ENDPOINTS ============
 app.get('/api/payments/products', (req, res) => {
+// ============ PAYMENT ENDPOINTS ============
+app.get('/api/payments/products', (req, res) => {
   res.json({
     products: [
       { id: 'premium_monthly', name: 'Premium Monthly', price: 3.99, currency: 'USD', type: 'subscription' },
@@ -290,7 +292,7 @@ app.get('/api/payments/products', (req, res) => {
 
 app.post('/api/payments/create', async (req, res) => {
   try {
-    const { userId, productId, amount, currency, productName } = req.body;
+    const { userId, productId, amount, productName } = req.body;
     
     // Create payment in NOWPayments
     const response = await axios.post('https://api.nowpayments.io/v1/payment', {
@@ -298,7 +300,7 @@ app.post('/api/payments/create', async (req, res) => {
       price_currency: 'usd',
       pay_currency: 'usd',
       order_id: `${userId}_${productId}_${Date.now()}`,
-      order_description: `Troupe - ${productName || productId}`,
+      order_description: `Troupe - ${productName}`,
       ipn_callback_url: `${process.env.APP_URL}/webhooks/nowpayments`,
       success_url: `${process.env.FRONTEND_URL}/payment-success`,
       cancel_url: `${process.env.FRONTEND_URL}/payment-cancel`
@@ -321,10 +323,35 @@ app.post('/api/payments/create', async (req, res) => {
   }
 });
 
-app.get('/api/payments/status/:paymentId', (req, res) => {
-  res.json({ status: 'pending' });
+app.get('/api/payments/status/:paymentId', async (req, res) => {
+  try {
+    const response = await axios.get(`https://api.nowpayments.io/v1/payment/${req.params.paymentId}`, {
+      headers: { 'x-api-key': process.env.NOWPAYMENTS_API_KEY }
+    });
+    res.json({ status: response.data.payment_status });
+  } catch (error) {
+    res.json({ status: 'pending' });
+  }
 });
 
+// Webhook for payment confirmation
+app.post('/webhooks/nowpayments', async (req, res) => {
+  try {
+    const event = req.body;
+    console.log('Webhook received:', event);
+    
+    if (event.payment_status === 'finished') {
+      // Payment successful - update user in database
+      console.log(`✅ Payment ${event.payment_id} completed!`);
+      // Here you would update user's gems or premium status
+    }
+    
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.sendStatus(500);
+  }
+});
 // ============ GEM ENDPOINTS ============
 app.get('/api/gems/balance', (req, res) => {
   res.json({ balance: 500 });
