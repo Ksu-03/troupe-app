@@ -20,19 +20,15 @@ model User {
   longestStreakDays Int       @default(0)
   distractionCount  Int       @default(0)
   isPremium         Boolean   @default(false)
-  premiumPlan       String?
   premiumExpiresAt  DateTime?
-  notificationToken String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   
-  memberships       TroupeMembership[]
+  troupes           TroupeMembership[]
   sessions          SessionParticipant[]
   createdTroupes    Troupe[]          @relation("TroupeCreator")
   createdSessions   FocusSession[]    @relation("SessionCreator")
   payments          Payment[]
-  distractionEvents DistractionEvent[]
-  userAchievements  UserAchievement[]
 }
 
 model Troupe {
@@ -42,11 +38,9 @@ model Troupe {
   crestEmoji        String    @default("🎯")
   crestColor        String    @default("#6366F1")
   createdById       String
-  isPrivate         Boolean   @default(true)
   inviteCode        String    @unique
   level             Int       @default(1)
   totalFocusMinutes Int       @default(0)
-  xp                Int       @default(0)
   createdAt         DateTime  @default(now())
   
   createdBy         User                @relation("TroupeCreator", fields: [createdById], references: [id])
@@ -84,7 +78,6 @@ model FocusSession {
   troupe                Troupe                @relation(fields: [troupeId], references: [id])
   createdBy             User                  @relation("SessionCreator", fields: [createdById], references: [id])
   participants          SessionParticipant[]
-  distractionEvents     DistractionEvent[]
 }
 
 model SessionParticipant {
@@ -98,58 +91,22 @@ model SessionParticipant {
   gemsEarned           Int       @default(0)
   joinedAt             DateTime  @default(now())
   
-  session              FocusSession          @relation(fields: [sessionId], references: [id])
-  user                 User                  @relation(fields: [userId], references: [id])
+  session              FocusSession @relation(fields: [sessionId], references: [id])
+  user                 User         @relation(fields: [userId], references: [id])
   
   @@unique([sessionId, userId])
-}
-
-model DistractionEvent {
-  id              String    @id @default(uuid())
-  sessionId       String
-  userId          String
-  distractionType String
-  detectedAt      DateTime  @default(now())
-  
-  session         FocusSession  @relation(fields: [sessionId], references: [id])
-  user            User          @relation(fields: [userId], references: [id])
 }
 
 model Payment {
   id              String    @id @default(uuid())
   userId          String
-  nowpaymentsId   String    @unique
-  productType     String
+  productId       String
   amountUsd       Float
   status          String    @default("pending")
-  cryptoCurrency  String?
-  cryptoAmount    Float?
+  nowpaymentsId   String    @unique
   checkoutUrl     String?
   completedAt     DateTime?
   createdAt       DateTime  @default(now())
   
   user            User      @relation(fields: [userId], references: [id])
-}
-
-model Achievement {
-  id            String    @id
-  name          String
-  description   String
-  icon          String
-  criteriaType  String
-  criteriaValue Int
-  rewardGems    Int
-  userAchievements UserAchievement[]
-}
-
-model UserAchievement {
-  id            String    @id @default(uuid())
-  userId        String
-  achievementId String
-  earnedAt      DateTime  @default(now())
-  
-  user          User          @relation(fields: [userId], references: [id])
-  achievement   Achievement   @relation(fields: [achievementId], references: [id])
-  
-  @@unique([userId, achievementId])
 }
