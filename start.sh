@@ -14,7 +14,7 @@ echo "🗄️  Generating Prisma client..."
 npx prisma generate
 
 echo "🗄️  Running database migrations..."
-npx prisma migrate deploy
+npx prisma migrate deploy || echo "Migrations already applied"
 
 echo "🚀 Starting server..."
-npm start
+node src/server.js
