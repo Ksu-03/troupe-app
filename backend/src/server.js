@@ -3,6 +3,9 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const axios = require('axios');
 
 dotenv.config();
@@ -10,26 +13,43 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
 app.use(cors());
 app.use(express.json());
 app.set('io', io);
 
-// ============ HEALTH ENDPOINTS ============
-app.get('/', (req, res) => {
-  res.json({ message: 'Troupe API is running!', version: '2.0.0' });
-});
+const prisma = new PrismaClient();
 
+// ============ JWT ============
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+
+function generateToken(userId) {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+async function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// ============ HEALTH ============
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ============ AUTH ENDPOINTS ============
+// ============ AUTH ============
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password, avatarEmoji, avatarColor } = req.body;
@@ -37,26 +57,34 @@ app.post('/api/auth/register', async (req, res) => {
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'All fields required' });
     }
-    
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
     
-    const mockUser = {
-      id: 'user_' + Date.now(),
-      username,
-      email,
-      avatarEmoji: avatarEmoji || '😊',
-      avatarColor: avatarColor || '#6366F1',
-      focusGems: 100,
-      isPremium: false,
-      currentStreakDays: 0,
-      totalFocusMinutes: 0
-    };
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ email }, { username }] }
+    });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email or username already taken' });
+    }
     
-    const mockToken = 'mock_jwt_token_' + Date.now();
+    const hashedPassword = await bcrypt.hash(password, 10);
     
-    res.status(201).json({ user: mockUser, token: mockToken });
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email,
+        passwordHash: hashedPassword,
+        avatarEmoji: avatarEmoji || '😊',
+        avatarColor: avatarColor || '#6366F1',
+        focusGems: 100
+      }
+    });
+    
+    const token = generateToken(user.id);
+    const { passwordHash, ...userWithoutPassword } = user;
+    
+    res.status(201).json({ user: userWithoutPassword, token });
     
   } catch (error) {
     console.error('Register error:', error);
@@ -68,25 +96,20 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    const mockUser = {
-      id: 'user_' + Date.now(),
-      username: email.split('@')[0],
-      email: email,
-      avatarEmoji: '😊',
-      avatarColor: '#6366F1',
-      focusGems: 100,
-      isPremium: false,
-      currentStreakDays: 0,
-      totalFocusMinutes: 0
-    };
+    const validPassword = await bcrypt.compare(password, user.passwordHash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     
-    const mockToken = 'mock_jwt_token_' + Date.now();
+    const token = generateToken(user.id);
+    const { passwordHash, ...userWithoutPassword } = user;
     
-    res.json({ user: mockUser, token: mockToken });
+    res.json({ user: userWithoutPassword, token });
     
   } catch (error) {
     console.error('Login error:', error);
@@ -94,212 +117,246 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ============ USER ENDPOINTS ============
-app.get('/api/users/profile', (req, res) => {
-  res.json({
-    user: {
-      id: 'demo-user',
-      username: 'demo_user',
-      email: 'demo@troupe.com',
-      avatarEmoji: '🧘',
-      avatarColor: '#6366F1',
-      focusGems: 500,
-      isPremium: true,
-      currentStreakDays: 7,
-      totalFocusMinutes: 1260
-    }
+app.get('/api/auth/me', verifyToken, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId },
+    include: { troupes: true, focusSessions: true }
   });
+  const { passwordHash, ...userWithoutPassword } = user;
+  res.json({ user: userWithoutPassword });
 });
 
-app.put('/api/users/profile', (req, res) => {
+// ============ USERS ============
+app.get('/api/users/profile', verifyToken, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId }
+  });
+  const { passwordHash, ...userWithoutPassword } = user;
+  res.json({ user: userWithoutPassword });
+});
+
+app.put('/api/users/profile', verifyToken, async (req, res) => {
   const { username, avatarEmoji, avatarColor } = req.body;
+  const user = await prisma.user.update({
+    where: { id: req.userId },
+    data: { username, avatarEmoji, avatarColor }
+  });
+  const { passwordHash, ...userWithoutPassword } = user;
+  res.json({ user: userWithoutPassword });
+});
+
+app.get('/api/users/stats', verifyToken, async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId }
+  });
+  
   res.json({
-    user: {
-      id: 'demo-user',
-      username: username || 'demo_user',
-      email: 'demo@troupe.com',
-      avatarEmoji: avatarEmoji || '🧘',
-      avatarColor: avatarColor || '#6366F1',
-      focusGems: 500,
-      isPremium: true
-    }
+    totalFocusMinutes: user.totalFocusMinutes,
+    currentStreakDays: user.currentStreakDays,
+    longestStreakDays: user.longestStreakDays,
+    distractionCount: user.distractionCount,
+    focusGems: user.focusGems,
+    isPremium: user.isPremium,
+    premiumExpiresAt: user.premiumExpiresAt
   });
 });
 
-app.get('/api/users/stats', (req, res) => {
-  res.json({
-    totalFocusMinutes: 1260,
-    currentStreakDays: 7,
-    longestStreakDays: 14,
-    distractionCount: 3,
-    focusGems: 500,
-    totalSessions: 42,
-    completedSessions: 38,
-    isPremium: true
-  });
-});
-
-app.get('/api/users/achievements', (req, res) => {
-  res.json({
-    achievements: [
-      { id: 'first_focus', name: 'First Steps', description: 'Complete your first session', icon: '🌟', earned: true },
-      { id: 'streak_master', name: 'Streak Master', description: '30-day streak', icon: '🔥', earned: false },
-      { id: 'troupe_player', name: 'Troupe Player', description: '10 sessions', icon: '🎭', earned: true }
-    ]
-  });
-});
-
-// ============ TROUPE ENDPOINTS ============
-app.get('/api/troupes', (req, res) => {
-  res.json({
-    troupes: [
-      {
-        id: 'troupe-1',
-        name: 'Focus Friends',
-        crestEmoji: '🎯',
-        crestColor: '#6366F1',
-        level: 3,
-        totalFocusMinutes: 450
-      },
-      {
-        id: 'troupe-2',
-        name: 'Study Squad',
-        crestEmoji: '📚',
-        crestColor: '#10B981',
-        level: 2,
-        totalFocusMinutes: 180
-      }
-    ]
-  });
-});
-
-app.post('/api/troupes', (req, res) => {
+// ============ TROUPES ============
+app.post('/api/troupes', verifyToken, async (req, res) => {
   const { name, description, crestEmoji, crestColor } = req.body;
-  res.status(201).json({
-    troupe: {
-      id: 'troupe-' + Date.now(),
-      name: name || 'My Troupe',
-      description: description || '',
+  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  
+  const troupe = await prisma.troupe.create({
+    data: {
+      name,
+      description,
       crestEmoji: crestEmoji || '🎯',
       crestColor: crestColor || '#6366F1',
-      inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      level: 1,
-      totalFocusMinutes: 0
+      createdById: req.userId,
+      inviteCode,
+      members: {
+        create: {
+          userId: req.userId,
+          role: 'admin'
+        }
+      }
     }
   });
+  
+  res.status(201).json({ troupe });
 });
 
-app.get('/api/troupes/:id', (req, res) => {
-  res.json({
-    troupe: {
-      id: req.params.id,
-      name: 'Focus Friends',
-      crestEmoji: '🎯',
-      crestColor: '#6366F1',
-      level: 3,
-      inviteCode: 'FOCUS123'
-    },
-    recentSessions: []
+app.get('/api/troupes', verifyToken, async (req, res) => {
+  const memberships = await prisma.troupeMembership.findMany({
+    where: { userId: req.userId },
+    include: { troupe: true }
   });
+  const troupes = memberships.map(m => m.troupe);
+  res.json({ troupes });
 });
 
-app.get('/api/troupes/:id/members', (req, res) => {
-  res.json({
-    members: [
-      { id: 'user1', username: 'alex', avatarEmoji: '😊', avatarColor: '#6366F1', role: 'admin', totalFocusMinutes: 320, sessionsCompleted: 15 },
-      { id: 'user2', username: 'jamie', avatarEmoji: '🧘', avatarColor: '#10B981', role: 'member', totalFocusMinutes: 180, sessionsCompleted: 8 }
-    ]
+app.get('/api/troupes/:id', verifyToken, async (req, res) => {
+  const troupe = await prisma.troupe.findUnique({
+    where: { id: req.params.id },
+    include: {
+      members: {
+        include: { user: true }
+      }
+    }
   });
+  res.json({ troupe });
 });
 
-app.post('/api/troupes/join', (req, res) => {
+app.post('/api/troupes/join', verifyToken, async (req, res) => {
   const { inviteCode } = req.body;
-  res.json({
-    troupe: {
-      id: 'joined-troupe',
-      name: 'Joined Troupe',
-      crestEmoji: '🎯',
-      crestColor: '#6366F1'
+  
+  const troupe = await prisma.troupe.findUnique({
+    where: { inviteCode: inviteCode.toUpperCase() }
+  });
+  
+  if (!troupe) {
+    return res.status(404).json({ error: 'Invalid invite code' });
+  }
+  
+  const existing = await prisma.troupeMembership.findUnique({
+    where: {
+      userId_troupeId: {
+        userId: req.userId,
+        troupeId: troupe.id
+      }
     }
   });
+  
+  if (existing) {
+    return res.status(400).json({ error: 'Already a member' });
+  }
+  
+  const membership = await prisma.troupeMembership.create({
+    data: {
+      userId: req.userId,
+      troupeId: troupe.id,
+      role: 'member'
+    }
+  });
+  
+  res.json({ troupe, membership });
 });
 
-// ============ SESSION ENDPOINTS ============
-app.post('/api/sessions', (req, res) => {
-  const { troupeId, durationMinutes } = req.body;
-  res.status(201).json({
-    session: {
-      id: 'session-' + Date.now(),
-      troupeId: troupeId,
+// ============ SESSIONS ============
+app.post('/api/sessions', verifyToken, async (req, res) => {
+  const { troupeId, durationMinutes, breakDurationMinutes } = req.body;
+  
+  const session = await prisma.focusSession.create({
+    data: {
+      troupeId,
+      createdById: req.userId,
       durationMinutes: durationMinutes || 25,
-      status: 'scheduled'
+      breakDurationMinutes: breakDurationMinutes || 5
     }
   });
+  
+  res.status(201).json({ session });
 });
 
-app.get('/api/sessions/active', (req, res) => {
-  res.json({ sessions: [] });
+app.post('/api/sessions/:id/join', verifyToken, async (req, res) => {
+  const sessionId = req.params.id;
+  const { contributionGems } = req.body;
+  
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId }
+  });
+  
+  const contribution = contributionGems || 10;
+  if (user.focusGems < contribution) {
+    return res.status(400).json({ error: 'Not enough gems' });
+  }
+  
+  await prisma.user.update({
+    where: { id: req.userId },
+    data: { focusGems: { decrement: contribution } }
+  });
+  
+  const participant = await prisma.sessionParticipant.create({
+    data: {
+      sessionId,
+      userId: req.userId,
+      contributionGems: contribution
+    }
+  });
+  
+  await prisma.focusSession.update({
+    where: { id: sessionId },
+    data: { totalPotSize: { increment: contribution } }
+  });
+  
+  res.json({ participant });
 });
 
-app.get('/api/sessions/:id', (req, res) => {
+app.post('/api/sessions/:id/end', verifyToken, async (req, res) => {
+  const sessionId = req.params.id;
+  
+  const session = await prisma.focusSession.findUnique({
+    where: { id: sessionId },
+    include: { participants: true }
+  });
+  
+  const focusedParticipants = session.participants.filter(p => p.focusStatus === 'focusing');
+  const totalPot = session.totalPotSize;
+  const rewardPerFocused = focusedParticipants.length > 0 ? totalPot / focusedParticipants.length : 0;
+  
+  for (const participant of focusedParticipants) {
+    const gemsEarned = Math.floor(rewardPerFocused);
+    await prisma.user.update({
+      where: { id: participant.userId },
+      data: { focusGems: { increment: gemsEarned } }
+    });
+    
+    await prisma.sessionParticipant.update({
+      where: { id: participant.id },
+      data: { gemsEarned, focusStatus: 'completed' }
+    });
+  }
+  
+  await prisma.focusSession.update({
+    where: { id: sessionId },
+    data: {
+      status: 'completed',
+      endedAt: new Date()
+    }
+  });
+  
   res.json({
-    session: {
-      id: req.params.id,
-      status: 'active',
-      totalPotSize: 40,
-      participants: [
-        { id: 'p1', userId: 'user1', user: { username: 'alex', avatarEmoji: '😊', avatarColor: '#6366F1' }, focusStatus: 'focusing' }
-      ]
+    results: {
+      totalPot,
+      focusedCount: focusedParticipants.length,
+      rewardPerFocused
     }
   });
 });
 
-app.post('/api/sessions/:id/join', (req, res) => {
-  res.json({ participant: { id: 'p-new', focusStatus: 'focusing' } });
-});
-
-app.post('/api/sessions/:id/start', (req, res) => {
-  res.json({ session: { status: 'active' } });
-});
-
-app.post('/api/sessions/:id/end', (req, res) => {
-  res.json({ results: { totalPot: 40, rewardPerFocused: 20 } });
-});
-
-app.post('/api/sessions/:id/report-distraction', (req, res) => {
-  res.json({ participant: { focusStatus: 'distracted' } });
-});
-
-app.post('/api/sessions/:id/heartbeat', (req, res) => {
-  res.json({ status: 'focusing' });
-});
-
-// ============ PAYMENT ENDPOINTS ============
-app.get('/api/payments/products', (req, res) => {
-// ============ PAYMENT ENDPOINTS ============
+// ============ PAYMENTS ============
 app.get('/api/payments/products', (req, res) => {
   res.json({
     products: [
-      { id: 'premium_monthly', name: 'Premium Monthly', price: 3.99, currency: 'USD', type: 'subscription' },
-      { id: 'premium_yearly', name: 'Premium Yearly', price: 29.99, currency: 'USD', type: 'subscription' },
-      { id: 'gems_100', name: '100 Focus Gems', price: 0.99, currency: 'USD', type: 'gems', gems: 100 },
-      { id: 'gems_550', name: '550 Focus Gems', price: 3.99, currency: 'USD', type: 'gems', gems: 550 },
-      { id: 'gems_1400', name: '1400 Focus Gems', price: 7.99, currency: 'USD', type: 'gems', gems: 1400 },
-      { id: 'gems_3750', name: '3750 Focus Gems', price: 14.99, currency: 'USD', type: 'gems', gems: 3750 }
+      { id: 'premium_monthly', name: 'Premium Monthly', price: 3.99, type: 'subscription' },
+      { id: 'premium_yearly', name: 'Premium Yearly', price: 29.99, type: 'subscription' },
+      { id: 'gems_100', name: '100 Gems', price: 0.99, type: 'gems', gems: 100 },
+      { id: 'gems_550', name: '550 Gems', price: 3.99, type: 'gems', gems: 550 },
+      { id: 'gems_1400', name: '1400 Gems', price: 7.99, type: 'gems', gems: 1400 },
+      { id: 'gems_3750', name: '3750 Gems', price: 14.99, type: 'gems', gems: 3750 }
     ]
   });
 });
 
-app.post('/api/payments/create', async (req, res) => {
+app.post('/api/payments/create', verifyToken, async (req, res) => {
   try {
-    const { userId, productId, amount, productName } = req.body;
+    const { productId, amount, productName } = req.body;
     
-    // Create payment in NOWPayments
     const response = await axios.post('https://api.nowpayments.io/v1/payment', {
       price_amount: amount,
       price_currency: 'usd',
       pay_currency: 'usd',
-      order_id: `${userId}_${productId}_${Date.now()}`,
+      order_id: `${req.userId}_${productId}_${Date.now()}`,
       order_description: `Troupe - ${productName}`,
       ipn_callback_url: `${process.env.APP_URL}/webhooks/nowpayments`,
       success_url: `${process.env.FRONTEND_URL}/payment-success`,
@@ -311,6 +368,16 @@ app.post('/api/payments/create', async (req, res) => {
       }
     });
     
+    await prisma.payment.create({
+      data: {
+        userId: req.userId,
+        productId,
+        amountUsd: amount,
+        nowpaymentsId: response.data.payment_id,
+        checkoutUrl: response.data.invoice_url
+      }
+    });
+    
     res.json({
       success: true,
       checkoutUrl: response.data.invoice_url,
@@ -318,57 +385,50 @@ app.post('/api/payments/create', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Payment creation error:', error.response?.data || error.message);
+    console.error('Payment error:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to create payment' });
   }
 });
 
-app.get('/api/payments/status/:paymentId', async (req, res) => {
-  try {
-    const response = await axios.get(`https://api.nowpayments.io/v1/payment/${req.params.paymentId}`, {
-      headers: { 'x-api-key': process.env.NOWPAYMENTS_API_KEY }
-    });
-    res.json({ status: response.data.payment_status });
-  } catch (error) {
-    res.json({ status: 'pending' });
-  }
-});
-
-// Webhook for payment confirmation
 app.post('/webhooks/nowpayments', async (req, res) => {
   try {
     const event = req.body;
     console.log('Webhook received:', event);
     
     if (event.payment_status === 'finished') {
-      // Payment successful - update user in database
-      console.log(`✅ Payment ${event.payment_id} completed!`);
-      // Here you would update user's gems or premium status
-    }
-    
-    res.sendStatus(200);
-  } catch (error) {
-    console.error('Webhook error:', error);
-    res.sendStatus(500);
-  }
-});
-// ============ GEM ENDPOINTS ============
-app.get('/api/gems/balance', (req, res) => {
-  res.json({ balance: 500 });
-});
-
-// ============ WEBHOOK - ADD THIS SECTION ============
-app.post('/webhooks/nowpayments', async (req, res) => {
-  try {
-    const event = req.body;
-    console.log('Webhook received:', event);
-    
-    // Verify signature (add this for security)
-    // const signature = req.headers['x-nowpayments-sig'];
-    
-    if (event.payment_status === 'finished') {
-      console.log(`Payment ${event.payment_id} completed successfully!`);
-      // In production, update user database here
+      const payment = await prisma.payment.findUnique({
+        where: { nowpaymentsId: event.payment_id }
+      });
+      
+      if (payment && payment.status !== 'completed') {
+        if (payment.productId.startsWith('gems')) {
+          const gemsMap = {
+            gems_100: 100,
+            gems_550: 550,
+            gems_1400: 1400,
+            gems_3750: 3750
+          };
+          await prisma.user.update({
+            where: { id: payment.userId },
+            data: { focusGems: { increment: gemsMap[payment.productId] } }
+          });
+        } else {
+          await prisma.user.update({
+            where: { id: payment.userId },
+            data: {
+              isPremium: true,
+              premiumExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+            }
+          });
+        }
+        
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: 'completed', completedAt: new Date() }
+        });
+        
+        console.log(`Payment ${event.payment_id} completed!`);
+      }
     }
     
     res.sendStatus(200);
@@ -384,26 +444,20 @@ io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => {
     socket.join(`session:${sessionId}`);
   });
+  socket.on('leave-session', (sessionId) => {
+    socket.leave(`session:${sessionId}`);
+  });
+  socket.on('focus-status-update', (data) => {
+    io.to(`session:${data.sessionId}`).emit('participant-update', data);
+  });
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
 });
 
-// ============ START SERVER ============
+// ============ START ============
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log('========================================');
-  console.log('🚀 Troupe Server Running!');
-  console.log('========================================');
+  console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 URL: https://troupe-app-production.up.railway.app`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log('========================================');
-  console.log('📋 Available Endpoints:');
-  console.log('   GET  /health                     - Health Check');
-  console.log('   POST /api/auth/register          - Register User');
-  console.log('   POST /api/auth/login             - Login User');
-  console.log('   GET  /api/troupes                - List Troupes');
-  console.log('   GET  /api/payments/products      - Products');
-  console.log('   POST /webhooks/nowpayments       - Payment Webhook');
-  console.log('========================================');
 });
