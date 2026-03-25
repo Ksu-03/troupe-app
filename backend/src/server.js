@@ -335,28 +335,32 @@ app.post('/api/sessions/:id/end', verifyToken, async (req, res) => {
 });
 
 // ============ PAYMENTS ============
+// ============ REAL PAYMENTS WITH NOWPAYMENTS ============
+
+// Get products
 app.get('/api/payments/products', (req, res) => {
   res.json({
     products: [
-      { id: 'premium_monthly', name: 'Premium Monthly', price: 3.99, type: 'subscription' },
-      { id: 'premium_yearly', name: 'Premium Yearly', price: 29.99, type: 'subscription' },
       { id: 'gems_100', name: '100 Gems', price: 0.99, type: 'gems', gems: 100 },
       { id: 'gems_550', name: '550 Gems', price: 3.99, type: 'gems', gems: 550 },
       { id: 'gems_1400', name: '1400 Gems', price: 7.99, type: 'gems', gems: 1400 },
-      { id: 'gems_3750', name: '3750 Gems', price: 14.99, type: 'gems', gems: 3750 }
+      { id: 'gems_3750', name: '3750 Gems', price: 14.99, type: 'gems', gems: 3750 },
+      { id: 'premium_monthly', name: 'Premium Monthly', price: 3.99, type: 'subscription' },
+      { id: 'premium_yearly', name: 'Premium Yearly', price: 29.99, type: 'subscription' }
     ]
   });
 });
 
-app.post('/api/payments/create', verifyToken, async (req, res) => {
+// Create payment - REAL NOWPAYMENTS API
+app.post('/api/payments/create', async (req, res) => {
   try {
-    const { productId, amount, productName } = req.body;
+    const { userId, productId, productName, amount, type } = req.body;
     
     const response = await axios.post('https://api.nowpayments.io/v1/payment', {
       price_amount: amount,
       price_currency: 'usd',
       pay_currency: 'usd',
-      order_id: `${req.userId}_${productId}_${Date.now()}`,
+      order_id: `${userId}_${productId}_${Date.now()}`,
       order_description: `Troupe - ${productName}`,
       ipn_callback_url: `${process.env.APP_URL}/webhooks/nowpayments`,
       success_url: `${process.env.FRONTEND_URL}/payment-success`,
@@ -368,13 +372,15 @@ app.post('/api/payments/create', verifyToken, async (req, res) => {
       }
     });
     
-    await prisma.payment.create({
+    // Save pending payment
+    await prisma.pendingPayment.create({
       data: {
-        userId: req.userId,
+        userId,
         productId,
-        amountUsd: amount,
+        productType: type,
+        amount,
         nowpaymentsId: response.data.payment_id,
-        checkoutUrl: response.data.invoice_url
+        status: 'pending'
       }
     });
     
@@ -385,49 +391,53 @@ app.post('/api/payments/create', verifyToken, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Payment error:', error.response?.data || error.message);
+    console.error('Payment creation error:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to create payment' });
   }
 });
 
+// Check payment status
+app.get('/api/payments/status/:paymentId', async (req, res) => {
+  try {
+    const response = await axios.get(`https://api.nowpayments.io/v1/payment/${req.params.paymentId}`, {
+      headers: { 'x-api-key': process.env.NOWPAYMENTS_API_KEY }
+    });
+    res.json({ status: response.data.payment_status });
+  } catch (error) {
+    res.json({ status: 'pending' });
+  }
+});
+
+// Webhook for payment confirmation
 app.post('/webhooks/nowpayments', async (req, res) => {
   try {
     const event = req.body;
     console.log('Webhook received:', event);
     
     if (event.payment_status === 'finished') {
-      const payment = await prisma.payment.findUnique({
+      const payment = await prisma.pendingPayment.findUnique({
         where: { nowpaymentsId: event.payment_id }
       });
       
       if (payment && payment.status !== 'completed') {
-        if (payment.productId.startsWith('gems')) {
-          const gemsMap = {
-            gems_100: 100,
-            gems_550: 550,
-            gems_1400: 1400,
-            gems_3750: 3750
-          };
+        if (payment.productType === 'gems') {
           await prisma.user.update({
             where: { id: payment.userId },
-            data: { focusGems: { increment: gemsMap[payment.productId] } }
+            data: { focusGems: { increment: payment.gems || 0 } }
           });
         } else {
           await prisma.user.update({
             where: { id: payment.userId },
-            data: {
-              isPremium: true,
-              premiumExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-            }
+            data: { isPremium: true, premiumPlan: payment.productId }
           });
         }
         
-        await prisma.payment.update({
+        await prisma.pendingPayment.update({
           where: { id: payment.id },
           data: { status: 'completed', completedAt: new Date() }
         });
         
-        console.log(`Payment ${event.payment_id} completed!`);
+        console.log(`✅ Payment ${event.payment_id} completed!`);
       }
     }
     
