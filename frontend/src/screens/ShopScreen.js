@@ -117,3 +117,84 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   gemEmoji: {
+    fontSize: 32,
+  },
+  gemAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  gemBonus: {
+    fontSize: 10,
+  },
+  gemPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  premiumCard: {
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  premiumPrice: {
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  premiumPeriod: {
+    fontSize: 12,
+  },
+  premiumSave: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  featureItem: {
+    width: '47%',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  featureIcon: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  featureTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  featureDesc: {
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  earnCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  earnEmoji: {
+    fontSize: 24,
+    width: 40,
+  },
+  earnText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  earnAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});
