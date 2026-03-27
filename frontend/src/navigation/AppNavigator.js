@@ -6,16 +6,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
-import AuthScreen from '../screens/AuthScreen';
-import HomeScreen from '../screens/HomeScreen';
-import TroupesScreen from '../screens/TroupesScreen';
-import ShopScreen from '../screens/ShopScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import {
+  AuthScreen,
+  HomeScreen,
+  TroupesScreen,
+  ShopScreen,
+  ProfileScreen,
+  StatsScreen,
+  SettingsScreen,
+  TroupeDetailScreen,
+} from '../screens';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function MainTabs() {
+function MainTabs({ screenProps }) {
   const { theme } = useTheme();
   
   return (
@@ -49,15 +54,100 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Troupes" component={TroupesScreen} />
-      <Tab.Screen name="Shop" component={ShopScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home">
+        {props => <HomeScreen {...props} {...screenProps} />}
+      </Tab.Screen>
+      <Tab.Screen name="Troupes">
+        {props => <TroupesScreen {...props} {...screenProps} />}
+      </Tab.Screen>
+      <Tab.Screen name="Shop">
+        {props => <ShopScreen {...props} {...screenProps} />}
+      </Tab.Screen>
+      <Tab.Screen name="Profile">
+        {props => <ProfileScreen {...props} {...screenProps} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
-export default function AppNavigator() {
+function HomeStack({ screenProps }) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="HomeMain">
+        {props => <HomeScreen {...props} {...screenProps} />}
+      </Stack.Screen>
+    </Stack.Navigator>
+  );
+}
+
+function TroupesStack({ screenProps }) {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: useTheme().theme.surface,
+          shadowColor: 'transparent',
+        },
+        headerTitleStyle: {
+          color: useTheme().theme.textPrimary,
+        },
+        headerBackTitle: 'Back',
+      }}
+    >
+      <Stack.Screen name="TroupesList">
+        {props => <TroupesScreen {...props} {...screenProps} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="TroupeDetail"
+        component={TroupeDetailScreen}
+        options={{ title: 'Troupe Details' }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function ShopStack({ screenProps }) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ShopMain">
+        {props => <ShopScreen {...props} {...screenProps} />}
+      </Stack.Screen>
+    </Stack.Navigator>
+  );
+}
+
+function ProfileStack({ screenProps }) {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: useTheme().theme.surface,
+          shadowColor: 'transparent',
+        },
+        headerTitleStyle: {
+          color: useTheme().theme.textPrimary,
+        },
+        headerBackTitle: 'Back',
+      }}
+    >
+      <Stack.Screen name="ProfileMain">
+        {props => <ProfileScreen {...props} {...screenProps} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="Stats"
+        component={StatsScreen}
+        options={{ title: 'Statistics' }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: 'Settings' }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+export default function AppNavigator({ screenProps }) {
   const { isLoggedIn, isLoading } = useAuth();
   const { theme } = useTheme();
   
@@ -73,9 +163,13 @@ export default function AppNavigator() {
       }}
     >
       {!isLoggedIn ? (
-        <Stack.Screen name="Auth" component={AuthScreen} />
+        <Stack.Screen name="Auth">
+          {props => <AuthScreen {...props} />}
+        </Stack.Screen>
       ) : (
-        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="Main">
+          {props => <MainTabs {...props} screenProps={screenProps} />}
+        </Stack.Screen>
       )}
     </Stack.Navigator>
   );
