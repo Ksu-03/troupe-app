@@ -7,11 +7,14 @@ import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
-// Modals
-import CreateTroupeModal from './src/screens/CreateTroupeModal';
-import JoinTroupeModal from './src/screens/JoinTroupeModal';
-import FocusSessionModal from './src/screens/FocusSessionModal';
-import FocusSessionScreen from './src/screens/FocusSessionScreen';
+import {
+  CreateTroupeModal,
+  JoinTroupeModal,
+  FocusSessionModal,
+  FocusSessionScreen,
+  PaymentModal,
+  PurchaseModal,
+} from './src/screens';
 
 function AppContent() {
   const { theme } = useTheme();
@@ -19,12 +22,33 @@ function AppContent() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showFocusModal, setShowFocusModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentItem, setPaymentItem] = useState(null);
   
-  // These will be passed to screens
+  // These will be passed to screens via screenProps
   const screenProps = {
     onCreateTroupe: () => setShowCreateModal(true),
     onJoinTroupe: () => setShowJoinModal(true),
     onStartFocus: () => setShowFocusModal(true),
+    onBuyGems: (pkg) => {
+      setPaymentItem({
+        id: `gems_${pkg.gems}`,
+        name: `${pkg.gems} Gems`,
+        price: pkg.price,
+        type: 'gems',
+        gems: pkg.gems,
+      });
+      setShowPaymentModal(true);
+    },
+    onBuyPremium: () => {
+      setPaymentItem({
+        id: 'premium_monthly',
+        name: 'Premium Subscription',
+        price: 3.99,
+        type: 'premium',
+      });
+      setShowPaymentModal(true);
+    },
   };
   
   if (activeSession) {
@@ -39,15 +63,17 @@ function AppContent() {
   
   return (
     <>
-      <NavigationContainer theme={{
-        colors: {
-          background: theme.background,
-          card: theme.surface,
-          text: theme.textPrimary,
-          border: theme.border,
-          primary: theme.primary,
-        },
-      }}>
+      <NavigationContainer
+        theme={{
+          colors: {
+            background: theme.background,
+            card: theme.surface,
+            text: theme.textPrimary,
+            border: theme.border,
+            primary: theme.primary,
+          },
+        }}
+      >
         <AppNavigator screenProps={screenProps} />
       </NavigationContainer>
       
@@ -65,6 +91,19 @@ function AppContent() {
         visible={showFocusModal}
         onClose={() => setShowFocusModal(false)}
         onStart={(session) => setActiveSession(session)}
+      />
+      
+      <PaymentModal
+        visible={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setPaymentItem(null);
+        }}
+        item={paymentItem}
+        onSuccess={() => {
+          setShowPaymentModal(false);
+          setPaymentItem(null);
+        }}
       />
     </>
   );
